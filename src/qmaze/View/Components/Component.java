@@ -23,6 +23,7 @@ public abstract class Component {
     public static String TRAINED_STATE = "Trained"; //We have trained the algorithm, so we can show optimal path, heatmap
     public static String ADJUST_PARAM_STATE = "PreTrain"; //Playing with variables, so need to resize maze, etc
     public static String ADJUST_MAZE_STATE = "PreTrainNoAdjust"; //Playing with maze rooms, no need to resize but need to disable optimal path etc
+    public static String AGENT_STATE = "HaveAgents"; //Need to know if we have any players before we start training
     
     public abstract Pane build();
     public abstract void reset();

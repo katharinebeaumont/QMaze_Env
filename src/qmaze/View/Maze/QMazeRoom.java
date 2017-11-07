@@ -1,6 +1,6 @@
-package qmaze.View.MazeComponents;
+package qmaze.View.Maze;
 
-import qmaze.Environment.Coordinates;
+import qmaze.Environment.Location;
 
 /**
  *
@@ -9,12 +9,12 @@ import qmaze.Environment.Coordinates;
 public class QMazeRoom {
     private boolean open = true;
     private int reward = 0;
-    private final Coordinates coordinates;
+    private final Location location;
     private double percentageVisits = 0;
     private double visitCount = 0;
     
-    public QMazeRoom(Coordinates coordinates) {
-        this.coordinates = coordinates;
+    public QMazeRoom(Location location) {
+        this.location = location;
     }
     
     public void setPercentageVisits(double percentageVisits) {
@@ -49,7 +49,7 @@ public class QMazeRoom {
         this.reward = reward;
     }
     
-    public Coordinates getCoordinates() {
-        return coordinates;
+    public Location getLocation() {
+        return location;
     }
 }

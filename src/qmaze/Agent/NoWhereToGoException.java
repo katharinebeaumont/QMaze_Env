@@ -1,6 +1,6 @@
 package qmaze.Agent;
 
-import qmaze.Environment.Coordinates;
+import qmaze.Environment.Location;
 
 /**
  *
@@ -8,7 +8,7 @@ import qmaze.Environment.Coordinates;
  */
 public class NoWhereToGoException extends Exception {
     
-    public NoWhereToGoException(Coordinates state) {
+    public NoWhereToGoException(Location state) {
         super("I have no-where to go from here: " + state.toString());
     }
     

@@ -16,19 +16,19 @@ public class AlertPopup {
         
     }
             
-    private void build(String message) {
+    private void build(String header, String message) {
        Alert alert = new Alert(Alert.AlertType.ERROR);
        alert.setTitle("Bad News");
-       alert.setHeaderText(message);
+       alert.setHeaderText(header);
        Rectangle r = new Rectangle(50,50);
        r.setFill(assets.getAgentDeathImage());
        alert.setGraphic(r);
-       alert.setContentText("There's no goal state I can get to. You're killing me!");
+       alert.setContentText(message);
        alert.showAndWait();
     }
     
-    public static void popup(String message) {
+    public static void popup(String header, String message) {
         AlertPopup popup = new AlertPopup();
-        popup.build(message);
+        popup.build(header, message);
     }
 }

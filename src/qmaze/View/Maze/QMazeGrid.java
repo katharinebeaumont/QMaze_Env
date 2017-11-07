@@ -1,10 +1,11 @@
-package qmaze.View.MazeComponents;
+package qmaze.View.Maze;
 
-import qmaze.View.TrainingConfig;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.collections.FXCollections;
@@ -29,13 +30,15 @@ import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
 import javafx.scene.shape.Rectangle;
 import javafx.util.Duration;
-import qmaze.Environment.Coordinates;
+import qmaze.Controller.EpisodeInterruptedException;
+import qmaze.Environment.Location;
 import qmaze.View.Components.Component;
 import qmaze.View.ViewController;
 
 /**
  *
  * @author katharine
+ * Just don't look at the code. It will burn your eyes.
  */
 public class QMazeGrid extends Component {
     
@@ -48,9 +51,8 @@ public class QMazeGrid extends Component {
     
     private int rows;
     private int columns;
-    private Coordinates startingState;
-    private Coordinates goalState;
-    private Coordinates agentLocation;
+    private Location goalState;
+    private HashMap<MazeAgent, Location> agentLocations;
     private final String SET_START = "Set starting room";
     private final String SET_GOAL = "Set goal room";
     
@@ -60,20 +62,18 @@ public class QMazeGrid extends Component {
     }
     
     private void initialiseMazeRooms() {
-        TrainingConfig mazeConfig = controller.getQMazeConfig();
+        MazeConfig mazeConfig = controller.getQMazeConfig();
         this.rows = mazeConfig.getRows();
         this.columns = mazeConfig.getColumns();
-        if (startingState == null) {
-            this.startingState = new Coordinates(0,0);
-        }
+        
         if (goalState == null) {
-             this.goalState = new Coordinates(columns-1,rows-1);
+             this.goalState = new Location(columns-1,rows-1);
         }
         
         this.rooms = new ArrayList();
         for (int i=0; i<columns; i++) {
             for (int j=0; j<rows; j++) {
-                QMazeRoom room = new QMazeRoom(new Coordinates(i, j));
+                QMazeRoom room = new QMazeRoom(new Location(i, j));
                 rooms.add(room);
             }
         }
@@ -93,7 +93,7 @@ public class QMazeGrid extends Component {
 
     @Override
     public void reset() {
-        setAgentLocation(null);
+        setAgentLocations(null);
         if (controller.STATE.equals(RESET_STATE) || controller.STATE.equals(ADJUST_PARAM_STATE)) {
             //Reset maze, according to controller's instructions
             initialiseMazeRooms();
@@ -120,18 +120,18 @@ public class QMazeGrid extends Component {
         
         for (QMazeRoom room: rooms) {
             
-            if (room.getCoordinates().equals(goalState)) {
+            if (room.getLocation().equals(goalState)) {
                 room.setReward(100);
             } else {
                 room.setReward(0);
             }
-            int columnIndex = room.getCoordinates().getXCoordinate();
-            int rowIndex = room.getCoordinates().getYCoordinate();
+            int columnIndex = room.getLocation().getCol();
+            int rowIndex = room.getLocation().getRow();
             Rectangle r = new Rectangle(50,50);
             
             boolean open = room.getOpen();
-            Coordinates roomLocation = room.getCoordinates();
-            boolean hasAgent = agentLocation != null && roomLocation.equals(agentLocation);
+            Location roomLocation = room.getLocation();
+            
             double percentageVisits = room.getPercentageVisits();
             double totalVisits = room.getVisitCount();
             double fillFactor = (percentageVisits + totalVisits) / 2;
@@ -149,20 +149,30 @@ public class QMazeGrid extends Component {
                 
             Rectangle r2 = new Rectangle(50,50);
             
+            boolean roomIsAStartingState = isRoomStartingState(roomLocation);
+            boolean anAgentIsAtGoal = getAgentForLocation(goalState) != null;
+            
+            MazeAgent agent = getAgentForLocation(roomLocation);
+            boolean hasAgent = agent != null;
+            
             if (roomLocation.equals(goalState)) {
                 if (hasAgent) {
-                    r2.setFill(assets.getAgentAtGoalImage());
+                    r2.setFill(agent.getAgentAtGoal());
                 } else {
                     r2.setFill(assets.getGoalImage());
                 }
                 //r2.setOpacity(0.4);
-            } else if (roomLocation.equals(startingState) && !hasAgent) {
+            } else if (roomIsAStartingState && !hasAgent) {
                 r2.setOpacity(0);
                 stack.getChildren().add(new Label("X"));
             } 
             else if (hasAgent) {
-                r2.setFill(assets.getAgentImage());
-                //r2.setOpacity(0.4);
+                if (anAgentIsAtGoal) {
+                    r2.setFill(agent.getAgentDeath());
+                    controller.showAlert(getAgentForLocation(goalState).getName() + " has won!", "Sorry " + agent.getName());
+                } else {
+                    r2.setFill(agent.getAgentImage());
+                }
             } else {
                 r2.setOpacity(0);
             }
@@ -194,7 +204,8 @@ public class QMazeGrid extends Component {
     }
 
     private void openOrCloseRoom(QMazeRoom room) {
-        if (room.getCoordinates().equals(startingState) || room.getCoordinates().equals(goalState)) {
+        boolean isStartingState = isRoomStartingState(room.getLocation());
+        if (isStartingState || room.getLocation().equals(goalState)) {
             Alert alert = new Alert(AlertType.INFORMATION);
             alert.setTitle("Oh dear");
             alert.setHeaderText("Trying to close this room?");
@@ -210,25 +221,29 @@ public class QMazeGrid extends Component {
     
     private void configureRoom(QMazeRoom room) {
         
-        ObservableList<String> options = 
-        FXCollections.observableArrayList(
-            SET_START,
-            SET_GOAL
-        );
-        ChoiceDialog cd = new ChoiceDialog(SET_START, options);
+        ObservableList<String> options = FXCollections.observableArrayList();
+        
+        MazeConfig mazeConfig = controller.getQMazeConfig();
+        for (MazeAgent agent: mazeConfig.getAgents()) {
+            options.add(SET_START + " for " + agent.getName());
+        }
+        options.add(SET_GOAL);
+        
+        ChoiceDialog cd = new ChoiceDialog(SET_GOAL, options);
         cd.setTitle("Configure Rooms");
         cd.setHeaderText("Change the starting or goal room");
+        
         Optional<String> result = cd.showAndWait();
         result.ifPresent(selected -> changeRoom(selected, room));
     }
     
     private void changeRoom(String selected, QMazeRoom room) {
-        Coordinates roomLocation = room.getCoordinates();
-        boolean isStartingState = roomLocation.equals(startingState);
+        Location roomLocation = room.getLocation();
+        boolean isStartingState = isRoomStartingState(roomLocation);
         boolean isGoalState = roomLocation.equals(goalState);
-        if (selected.equals(SET_START) && !isGoalState) {
+        if (selected.startsWith(SET_START) && !isGoalState) {
             System.out.println("Changing starting state to " + roomLocation.toString());
-            setStartingState(roomLocation);
+            setStartingState(selected, roomLocation);
             controller.roomReset();
         }
         if (selected.equals(SET_GOAL) && !isStartingState) {
@@ -238,10 +253,43 @@ public class QMazeGrid extends Component {
         }
     }
     
+    private void setStartingState(String selected, Location roomLocation) {
+        MazeConfig mazeConfig = controller.getQMazeConfig();
+        for (MazeAgent agent: mazeConfig.getAgents()) {
+            if (selected.contains(agent.getName())) {
+                agent.setStartingLocation(roomLocation);
+            }
+        }
+    }
+    
+    private boolean isRoomStartingState(Location roomLocation) {
+        MazeConfig mazeConfig = controller.getQMazeConfig();
+        ArrayList<MazeAgent> agents = mazeConfig.getAgents();
+        if (agents == null || agents.isEmpty()) {
+            return false;
+        }
+        List<Location> startingStates = agents.stream()
+                                    .map(MazeAgent::getStartingLocation)
+                                    .collect(Collectors.toList());
+        return startingStates.contains(roomLocation);
+    }
+    
+    private MazeAgent getAgentForLocation(Location roomLocation) {
+        if (agentLocations == null || agentLocations.isEmpty()) {
+            return null;
+        } 
+        for (MazeAgent agent: agentLocations.keySet()) {
+            if (agentLocations.containsValue(roomLocation)) {
+                return agent;
+            }
+        }
+        return null;
+    }
+    
     /**
      * Animation/heatmap stuff
      */
-    public void showVisitCount(HashMap<Coordinates, Integer> heatMap) {
+    public void showVisitCount(HashMap<Location, Integer> heatMap) {
     
         if (heatMap == null) {
             return;
@@ -252,7 +300,7 @@ public class QMazeGrid extends Component {
         double highestVisit = getHighestVisitCount(heatMap);
         
         for (QMazeRoom room: rooms) {
-            Coordinates roomLocation = room.getCoordinates();
+            Location roomLocation = room.getLocation();
             if (heatMap.containsKey(roomLocation)) {
                 double roomVisits = heatMap.get(roomLocation);
                 room.setPercentageVisits(roomVisits/maxVisit);
@@ -265,20 +313,20 @@ public class QMazeGrid extends Component {
         redrawMaze();
     }
     
-    private double getTotalVisitCount(HashMap<Coordinates, Integer> heatMap) {
+    private double getTotalVisitCount(HashMap<Location, Integer> heatMap) {
         double totalVisits = 0;
-        Set<Coordinates> keys = heatMap.keySet();
-        for (Coordinates key: keys) {
+        Set<Location> keys = heatMap.keySet();
+        for (Location key: keys) {
             int value = heatMap.get(key);
             totalVisits = totalVisits + (double)value;
         }
         return totalVisits;
     }
     
-    private double getHighestVisitCount(HashMap<Coordinates, Integer> heatMap) {
+    private double getHighestVisitCount(HashMap<Location, Integer> heatMap) {
         int highestVisit = 0;
-        Set<Coordinates> keys = heatMap.keySet();
-        for (Coordinates key: keys) {
+        Set<Location> keys = heatMap.keySet();
+        for (Location key: keys) {
             int value = heatMap.get(key);
             if (value > highestVisit) {
                 highestVisit = value;
@@ -316,19 +364,32 @@ public class QMazeGrid extends Component {
         return fillColor;
     }
     
-    public void animateMap(ArrayList<Coordinates> optimalPath) {
+    /**
+     * TODO: some logic that shouldn't be here about which agent wins
+     * Whichever agent reaches the goal first is assumed to have won.
+     */
+    public void animateMap(HashMap<MazeAgent, ArrayList<Location>> agentLocations) {
         
-        animateAgent(startingState);
-
+        int steps = getStepsToGoal(agentLocations);
+        
         System.out.println("Finding path");
-        int stepsToGoal = optimalPath.size();
-        long interval = getInterval(stepsToGoal);
+        long interval = getInterval(steps);
         System.out.println("Interval is: " + interval);
+        
         long timeMillis = 0;
-        for (Coordinates agentLocation : optimalPath) {
-            
+        for (int j=0; j<steps; j++) {
+            HashMap<MazeAgent, Location> movements = new HashMap<MazeAgent, Location>();
+            for (MazeAgent agent : agentLocations.keySet()) {
+                ArrayList<Location> locationsForAgent = agentLocations.get(agent);
+                
+                if (locationsForAgent.size() >= (j+1)) {
+                    Location startingStage = locationsForAgent.get(j);
+                    movements.put(agent, startingStage);
+                }
+            }
+
             Timeline beat = new Timeline(
-                new KeyFrame(Duration.millis(timeMillis),         event -> animateAgent(agentLocation))
+                new KeyFrame(Duration.millis(timeMillis),         event -> animateAgents(movements))
             );
             beat.setAutoReverse(true);
             beat.setCycleCount(1);
@@ -337,8 +398,20 @@ public class QMazeGrid extends Component {
         } 
     }
 
-    private void animateAgent(Coordinates roomWithAgent) {
-        setAgentLocation(roomWithAgent);
+    private int getStepsToGoal(HashMap<MazeAgent, ArrayList<Location>> agentLocations) {
+        int minSteps = 1000;
+        for (MazeAgent agent: agentLocations.keySet()) {
+            ArrayList<Location> locations = agentLocations.get(agent);
+            Location lastLocation = locations.get(locations.size()-1);
+            if (locations.size() < minSteps && lastLocation.equals(goalState)) {
+               minSteps = locations.size(); 
+            }
+        }
+        return minSteps;
+    }
+    
+    private void animateAgents(HashMap<MazeAgent, Location> agentLocations) {
+        setAgentLocations(agentLocations);
         redrawMaze();
     }
     
@@ -376,29 +449,21 @@ public class QMazeGrid extends Component {
     public int getColumns() {
         return columns;
     }
-    
-    public Coordinates getStartingState() {
-        return startingState;
-    }
-
-    public void setStartingState(Coordinates startingState) {
-        this.startingState = startingState;
-    }
         
-    public Coordinates getGoalState() {
+    public Location getGoalState() {
         return goalState;
     }
     
-    public void setGoalState(Coordinates goalState) {
+    public void setGoalState(Location goalState) {
         this.goalState = goalState;
     }
     
-    public Coordinates getAgentLocation() {
-        return agentLocation;
+    public HashMap<MazeAgent, Location> getAgentLocations() {
+        return agentLocations;
     }
     
-    private void setAgentLocation(Coordinates agentLocation) {
-        this.agentLocation = agentLocation;
+    private void setAgentLocations(HashMap<MazeAgent, Location> agentLocations) {
+        this.agentLocations = agentLocations;
     }
     
 }

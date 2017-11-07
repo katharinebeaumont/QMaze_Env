@@ -2,54 +2,59 @@ package qmaze.Controller;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import qmaze.Agent.Agent;
-import qmaze.Agent.AgentLearningParameters;
-import qmaze.Agent.AgentMemory;
-import qmaze.Environment.Coordinates;
+import java.util.List;
+import qmaze.View.Maze.MazeAgent;
+import qmaze.Agent.AgentController;
+import qmaze.Agent.SpatialExperienceMemory;
+import qmaze.Environment.Location;
 import qmaze.Environment.Maze;
-import qmaze.View.TrainingConfig;
-import qmaze.View.MazeComponents.QMazeRoom;
+import qmaze.View.Maze.MazeConfig;
+import qmaze.View.Maze.QMazeRoom;
+import qmaze.View.LearningGrid.MazeLearning;
 
 /**
  *
  * @author katharine
- * I know about things I get from the view:
- *  - Learning parameters
- *  - Number of episodes
- *  - The size of the maze
- *  - If maze rooms are open or closed
- * I use the view data to configure the model.
- * I get these back from the model:
- *  - Q values 
- *  - Optimal path
- *  - Journey data
- * I pass information from the model to the view.
+ * Needs rewriting: needs to act as central clock... one tick moves each agent through the enviroment
  */
 public class LearningController {
 
-    private Maze maze;
-    private Agent agent;
-    private AgentLearningParameters learningParameters;
-    private HashMap<Coordinates, Integer> heatMap;
     private static final int EXCEPTION_THRESHOLD = 20;
     
-    public LearningController() {
+    private HashMap<MazeAgent, AgentController> agents;
+    private Maze maze;
+    private final int episodes;
+    
+    private HashMap<Location, Integer> heatMap;
+    
+    public LearningController(ArrayList<QMazeRoom> rooms, MazeConfig mazeConfig) {
+        this.agents = new HashMap<>();
+        this.episodes = mazeConfig.getEpisodes();
         
+        initialiseMaze(rooms, mazeConfig.getRows(), mazeConfig.getColumns());
+        initialiseAgents(mazeConfig.getAgents());
     }
     
-    public void startLearning(ArrayList<QMazeRoom> rooms, int rows, int columns, Coordinates startingState, TrainingConfig mazeConfig) throws TrainingInterruptedException {
+    /*
+     * TODO: Need a complete rewrite
+     */
+    public void startLearning() throws TrainingInterruptedException {
+        
+        String agentNames = "";
+        for (MazeAgent agent: agents.keySet()) {
+            if (!agentNames.isEmpty()) {
+                agentNames += " and ";
+            }
+            agentNames += agent.getName();
+        }
         
         int exceptionCount = 0;
         heatMap = new HashMap();
-        initialiseMaze(rooms, rows, columns);
-        initialiseAgent(mazeConfig);
-        agent.introduceSelf(startingState);
-        int episodes = mazeConfig.getEpisodes();
         
-        for (int i=0; i<episodes; i++) {
-            
-            System.out.println("**Training episode " + i);
-            Episode e = new Episode(agent, maze, startingState);
+        for (int i=1; i<episodes; i++) {
+
+            System.out.println("**Training episode " + i + " for " + agentNames);
+            Episode e = new Episode(agents, maze);
             try { 
                 e.play();
             } catch (EpisodeInterruptedException ex) {
@@ -66,60 +71,66 @@ public class LearningController {
     public void initialiseMaze(ArrayList<QMazeRoom> rooms, int rows, int columns) {
         maze = new Maze(rows, columns);
         rooms.forEach((r) -> {
-            Coordinates roomLocation = new Coordinates(r.getCoordinates());
+            Location roomLocation = new Location(r.getLocation());
             boolean open = r.getOpen();
             maze.setOpen(roomLocation, open);
             if (r.getReward() > 0) {
-                //TODO: make configurable, so more that one room can have a reward
-                // So need a different way of signifying goal state
                 maze.setGoalState(roomLocation, r.getReward());
             }
         });
     }
-
-    private void initialiseAgent(TrainingConfig mazeConfig) {
-        learningParameters = new AgentLearningParameters(mazeConfig.getEpsilon(), mazeConfig.getAlpha(), mazeConfig.getGamma());
-        agent = new Agent(learningParameters);
-    }
-      
-    public HashMap<Coordinates, HashMap<Coordinates,Double>> getLearnings(ArrayList<QMazeRoom> rooms) {
-         
-        HashMap<Coordinates, HashMap<Coordinates,Double>> learning = new HashMap();
-        if (agent == null) {
-            return learning;
+    
+    public void initialiseAgents(List<MazeAgent> mazeAgents) {
+        for (MazeAgent mazeAgent: mazeAgents) {
+            AgentController agentController = new AgentController(mazeAgent.getStartingLocation(), mazeAgent.getUrl());
+            agents.put(mazeAgent, agentController);
         }
-        AgentMemory memory = agent.getMemory();
+    }
+    
+    public HashMap<MazeAgent, MazeLearning> getLearnings(ArrayList<QMazeRoom> rooms) {
+       HashMap<MazeAgent, MazeLearning> learnings = new HashMap<>();
+       for (MazeAgent agent: agents.keySet()) {
+           MazeLearning mazeLearning = getLearningsForAgent(rooms, agent);
+           learnings.put(agent, mazeLearning);
+       }
+       return learnings;
+    }
+    
+    private MazeLearning getLearningsForAgent(ArrayList<QMazeRoom> rooms, MazeAgent agent) {
+         
+        MazeLearning learning = new MazeLearning();
         
+        AgentController ac = agents.get(agent);
+        
+        SpatialExperienceMemory memory = ac.whatDoYouRemember();
         rooms.forEach((r) -> {
-            Coordinates roomLocation = r.getCoordinates();
+            Location roomLocation = r.getLocation();
             if (r.getOpen()) {
-                HashMap<Coordinates,Double> rewardFromRoom = new HashMap();
-                ArrayList<Coordinates> potentialActions = memory.actionsForState(roomLocation);
-                for (Coordinates action: potentialActions) {
+                HashMap<Location,Double> rewardFromRoom = new HashMap();
+                ArrayList<Location> potentialActions = memory.actionsForState(roomLocation);
+                for (Location action: potentialActions) {
                     double reward = memory.rewardFromAction(roomLocation, action);
                     rewardFromRoom.put(action, reward);
                 }
                 learning.put(roomLocation, rewardFromRoom);
             }
         });
+        
         return learning;
     }
     
-    public ArrayList<Coordinates> getOptimalPath(Coordinates startingState) {
-        OptimalEpisode e = new OptimalEpisode(agent, maze, startingState);
-        ArrayList<Coordinates> optimalPath = new ArrayList();
-        
-        try { 
-            optimalPath = e.findOptimalPath();
-        } catch (EpisodeInterruptedException ex) {
-            System.out.println(ex.getMessage());
-        }
-        
-        return optimalPath;
+    public HashMap<MazeAgent, ArrayList<Location>> getOptimalPath() {
+       HashMap<MazeAgent, ArrayList<Location>> agentLocations = new HashMap<MazeAgent, ArrayList<Location>>();
+       for (MazeAgent agent: agents.keySet()) {
+           AgentController ac = agents.get(agent);
+           ArrayList<Location> optimalPath = ac.whatIsYourOptimalPath();
+           agentLocations.put(agent, optimalPath);
+       }
+       return agentLocations;
     }
 
-    private void buildHeatMap(ArrayList<Coordinates> episodeSteps) {
-        for (Coordinates roomVisited: episodeSteps) {
+    private void buildHeatMap(ArrayList<Location> episodeSteps) {
+        for (Location roomVisited: episodeSteps) {
             
             Integer roomVisitCount = heatMap.get(roomVisited);
             if (roomVisitCount == null) {
@@ -130,7 +141,13 @@ public class LearningController {
         }
     }
     
-    public HashMap<Coordinates, Integer> getHeatMap() {
+    public HashMap<Location, Integer> getHeatMap() {
         return heatMap;
+    }
+    
+    //TODO: should be somewhere else
+    public static String validateUrl(String url) {
+        AgentController test = new AgentController(url);
+        return test.hello();
     }
 }

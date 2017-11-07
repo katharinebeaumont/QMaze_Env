@@ -1,9 +1,10 @@
 package qmaze.Environment;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
- *TODO: consistently do x,y or coordinates
  * @author katharine
  * The Maze knows:
  *  - It's size
@@ -31,7 +32,7 @@ public class Maze {
         buildMaze(rows, columns);
     }
     
-    private Room getRoom(Coordinates state) {
+    private Room getRoom(Location state) {
         
         Room roomToFind = new Room(state);
         for (Room room: rooms) {
@@ -42,23 +43,22 @@ public class Maze {
         return null;
     }
     
-    public void setOpen(Coordinates state, boolean open) {
-        
+    public void setOpen(Location state, boolean open) {
         Room r = getRoom(state);
         r.open(open);
     }
     
-    public void setGoalState(Coordinates state, int reward) {
+    public void setGoalState(Location state, int reward) {
         goal = getRoom(state);
         goal.setReward(reward);
     }
     
-    public boolean isGoalState(Coordinates state) {
+    public boolean isGoalState(Location state) {
         Room room = getRoom(state);
         return room.equals(goal);
     }
     
-    public double getReward(Coordinates action) {
+    public double getReward(Location action) {
         Room r = getRoom(action);
         return r.getReward();
     }
@@ -66,17 +66,48 @@ public class Maze {
     private void buildMaze(int rows, int columns) {
         for (int row=0; row<rows; row++) {
             for (int column=0; column<columns; column++) {
-                Room r = new Room(column, row);
+                Room r = new Room(new Location(column, row));
                 rooms.add(r);
             }
         }
     }
-    
-    public ArrayList<Coordinates> getAdjoiningStates(Coordinates state) {
+            
+   /*
+    * TODO: refactor: environment should know when agents are in rooms?
+    */
+    public Set<Direction> getAdjoiningStatesExcluding(Location state, ArrayList<Location> locationsToExclude) {
         Room r = getRoom(state);
-        ArrayList<Coordinates> adjoiningRooms = new ArrayList();
+        HashSet<Direction> adjoiningRooms = new HashSet();
         rooms.stream().filter((otherRoom) -> (otherRoom.isOpen() && otherRoom.adjoins(r))).forEachOrdered((otherRoom) -> {
-            adjoiningRooms.add(new Coordinates(otherRoom.getXCoordinate(), otherRoom.getYCoordinate()));
+            Location thisLocation = r.getLocation();
+            Location otherLocation = otherRoom.getLocation();
+            if (!locationsToExclude.contains(otherLocation)) {
+               
+
+                int other_x = otherLocation.getCol();
+                int this_x = thisLocation.getCol();
+                int other_y = otherLocation.getRow();
+                int this_y = thisLocation.getRow();
+                if (other_x == this_x) {
+                    //x is same, so if y is higher, it's down
+                    if (this_y < other_y) {
+                        adjoiningRooms.add(Direction.DOWN);
+                    }
+                    if (this_y > other_y) {
+                        adjoiningRooms.add(Direction.UP);
+                    }
+                }
+
+                if (other_y == this_y) {
+                    //y is same, so if x is less, it's left
+                    if (this_x < other_x) { //e.g. currently at 3, can go to 4
+                        adjoiningRooms.add(Direction.RIGHT);
+                    } 
+                    if (this_x > other_x) { //e.g currently at 3, can go to 2
+                        adjoiningRooms.add(Direction.LEFT);
+                    }
+                }
+            }
         });
         return adjoiningRooms;
    }   

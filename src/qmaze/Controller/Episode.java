@@ -1,10 +1,18 @@
 package qmaze.Controller;
 
 import java.util.ArrayList;
-import qmaze.Agent.Agent;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import qmaze.Environment.Direction;
+import qmaze.Agent.AgentController;
 import qmaze.Agent.NoWhereToGoException;
-import qmaze.Environment.Coordinates;
+import qmaze.Environment.Location;
 import qmaze.Environment.Maze;
+import qmaze.View.Maze.MazeAgent;
 
 /**
  *
@@ -13,64 +21,71 @@ import qmaze.Environment.Maze;
  */
 public class Episode {
     
-    public final Agent agent;
+    public final HashMap<MazeAgent, AgentController> agents;
     public final Maze maze;
     public final int STEP_LIMIT = 5000;
     
-    public final Coordinates startingState;
+    public ArrayList<Location> episodeSteps;
     
-    public ArrayList<Coordinates> episodeSteps;
-    
-    public Episode(Agent agent, Maze maze, Coordinates startingState) {
-        this.agent = agent;
+    public Episode(HashMap<MazeAgent, AgentController> agents, Maze maze) {
+        this.agents = agents;
         this.maze = maze;
-        this.startingState = startingState;
-        this.episodeSteps = new ArrayList();
+        this.episodeSteps = new ArrayList<>();
     }
     
     public void play() throws EpisodeInterruptedException {
         
-        agent.start(startingState);
-        episodeSteps.add(startingState);
-        while(!atGoalState()) {
-            Coordinates action = getNextAction();
+        System.out.println("Playing episode");
+        
+        while(goalNotReached()) {
+            //Agent can't move into a location that another agent is in 
+            ArrayList<Location> otherAgentActions = new ArrayList<Location>();
             
-            //Did the maze give a reward?
-            double reward = maze.getReward(action);
-            agent.takeAction(action, reward);
-            
-            recordSteps(action);
+            for (MazeAgent agent: agents.keySet()) {
+                AgentController controller = agents.get(agent);
+                Location action = getNextAction(controller, otherAgentActions);
+                otherAgentActions.add(action);
+                 //Did the maze give a reward?
+                double reward = maze.getReward(action);
+                controller.giveRewardAndPromptMove(reward);
+                recordAction(action);
+            }
         }
-        System.out.println("Finished episode with " + episodeSteps.size() + " steps.");
-    }
-
-    public ArrayList<Coordinates> getEpisodeSteps() {
-        return episodeSteps;
+        System.out.println("Finished episode in " + episodeSteps + " steps.");
     }
     
-    public void recordSteps(Coordinates action) throws EpisodeInterruptedException {
+    public void recordAction(Location action) throws EpisodeInterruptedException {
         episodeSteps.add(action);
         if (episodeSteps.size() == STEP_LIMIT) {
             throw new EpisodeInterruptedException("taking too long!", episodeSteps.size());
         }
     }
 
-    public Coordinates getNextAction() throws EpisodeInterruptedException {
+    public Location getNextAction(AgentController agent, ArrayList<Location> otherAgentLocations) throws EpisodeInterruptedException {
         //Where is the agent?
-        Coordinates currentState = agent.location();
+        Location currentState = agent.whereAreYou();
         //Have a look around the maze
-        ArrayList<Coordinates> adjoiningStates = maze.getAdjoiningStates(currentState);
+        Set<Direction> adjoiningStates = maze.getAdjoiningStatesExcluding(currentState, otherAgentLocations);
         //Decide on action
-        Coordinates action;
         try {
-            action = agent.chooseAction(adjoiningStates);
+            Direction selectedDirection = agent.chooseNextAction(adjoiningStates);
+            return currentState.getAdjoining(selectedDirection);
         } catch (NoWhereToGoException e) {
             throw new EpisodeInterruptedException(e, episodeSteps.size());
         }
-        return action;
+    }
+
+    private boolean goalNotReached() {
+        for (MazeAgent agent: agents.keySet()) {
+            AgentController controller = agents.get(agent);
+            if (controller.isGoalReached()) {
+                return false;
+            }
+        }
+        return true;
     }
     
-    public boolean atGoalState() {
-        return maze.isGoalState(agent.location());
-    }  
+    public ArrayList<Location> getEpisodeSteps(){
+        return episodeSteps;
+    }
 }

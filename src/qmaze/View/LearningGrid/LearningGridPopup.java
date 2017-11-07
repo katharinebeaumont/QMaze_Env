@@ -1,49 +1,66 @@
-package qmaze.View.Components;
+package qmaze.View.LearningGrid;
 
-import qmaze.View.ViewController;
 import java.util.HashMap;
 import java.util.Set;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
+import javafx.scene.Scene;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.Border;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.StackPane;
 import javafx.scene.text.Text;
-import qmaze.Environment.Coordinates;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
+import qmaze.Environment.Location;
+import qmaze.View.Assets;
 
 /**
  *
  * @author katharine
  */
-public class LearningGridComponent extends Component {
+public class LearningGridPopup {
 
-    private BorderPane border = new BorderPane();
-    
-    public LearningGridComponent(ViewController controller) {
-        super(controller);
+    private final BorderPane border = new BorderPane();
+    private final String name;
+    private final MazeLearning learning;
+    private final Location goalState;
+    private final Assets assets;
+
+    public LearningGridPopup(String name, MazeLearning learning, Location goalState, Assets assets) {
+        this.name = name;
+        this.learning = learning;
+        this.goalState = goalState;
+        this.assets = assets;
     }
     
-    @Override
+    
     public Pane build() {
-        HashMap<Coordinates, HashMap<Coordinates,Double>> roomLearnings = controller.getLearnings();
-        Coordinates goalState = controller.getGoalState();
-        return addQTable(roomLearnings, goalState);
+        HashMap<Location, HashMap<Location,Double>> roomLearnings = learning.getLearnings();
+        addQTable(roomLearnings, goalState);
+        
+        final Stage learningGridPopup = new Stage();
+        learningGridPopup.initModality(Modality.NONE);
+        
+        StackPane root = new StackPane();
+        Scene scene = new Scene(root, 300, 300);
+        root.getChildren().add(border);
+        
+        learningGridPopup.setTitle("Learnings for " + name);
+        learningGridPopup.setScene(scene);
+        learningGridPopup.show();
+        return null;
     }
     
-    @Override
     public void reset() {
-        if (controller.STATE.equals(TRAINED_STATE)) {
-            build();
-        } else {
-            Node qTable = border.getCenter();
-            border.getChildren().remove(qTable);
-        }
+         Node qTable = border.getCenter();
+         border.getChildren().remove(qTable);
     }
     
-    private Pane addQTable(HashMap<Coordinates, HashMap<Coordinates,Double>> roomLearnings, Coordinates goalState) {
+    private Pane addQTable(HashMap<Location, HashMap<Location,Double>> roomLearnings, Location goalState) {
         
         if (roomLearnings.isEmpty()) {
             return border;
@@ -57,19 +74,19 @@ public class LearningGridComponent extends Component {
         grid.setPadding(new Insets(10, 10, 10, 10));
         grid.setStyle(assets.getLightGreenBackground()); 
         
-        Set<Coordinates> roomCoordinates = roomLearnings.keySet();
-        for (Coordinates roomCoordinate: roomCoordinates) {
+        Set<Location> roomCoordinates = roomLearnings.keySet();
+        for (Location roomCoordinate: roomCoordinates) {
             Pane textPane = new Pane();
             
-            int columnIndex = roomCoordinate.getXCoordinate();
-            int rowIndex = roomCoordinate.getYCoordinate();
+            int columnIndex = roomCoordinate.getCol();
+            int rowIndex = roomCoordinate.getRow();
             StringBuilder sb = new StringBuilder();
             sb.append("Room ");
             sb.append(rowIndex);
             sb.append(",");
             sb.append(columnIndex);
             sb.append("\n");
-            HashMap<Coordinates,Double> actions = roomLearnings.get(roomCoordinate);
+            HashMap<Location,Double> actions = roomLearnings.get(roomCoordinate);
             String toolTipText = "";
             if (goalState.equals(roomCoordinate)) {
                 sb.append("GOAL");
@@ -81,14 +98,14 @@ public class LearningGridComponent extends Component {
                 textPane.setStyle(assets.getUnvisitedRoomBackground());
             }
             else {
-                for (HashMap.Entry<Coordinates,Double> entry : actions.entrySet()) {
-                    Coordinates nextRoom = entry.getKey();
+                for (HashMap.Entry<Location,Double> entry : actions.entrySet()) {
+                    Location nextRoom = entry.getKey();
                     String qValueForText = String.format("%.2f", entry.getValue());
                     sb.append(qValueForText);
                     sb.append(getArrowDirection(roomCoordinate, nextRoom));
                     sb.append("\n");
                     textPane.setStyle(assets.getWhiteBackground());
-                    String qValueForToolTip = String.format("%.4f", entry.getValue());
+                    String qValueForToolTip = String.format("%.6f", entry.getValue());
                     toolTipText = toolTipText + "Moving " + getDirectionDesc(roomCoordinate, nextRoom) + " for " + qValueForToolTip + "\n";
                 }
             }
@@ -110,11 +127,11 @@ public class LearningGridComponent extends Component {
         return border;
     }
     
-    private String getArrowDirection(Coordinates currentRoom, Coordinates nextRoom) {
-        int currentRow = currentRoom.getYCoordinate();
-        int currentColumn = currentRoom.getXCoordinate();
-        int nextRow = nextRoom.getYCoordinate();
-        int nextColumn = nextRoom.getXCoordinate();
+    private String getArrowDirection(Location currentRoom, Location nextRoom) {
+        int currentRow = currentRoom.getRow();
+        int currentColumn = currentRoom.getCol();
+        int nextRow = nextRoom.getRow();
+        int nextColumn = nextRoom.getCol();
         if (currentRow == nextRow && currentColumn > nextColumn) {
             return " <- ";
         } else if (currentRow == nextRow && currentColumn < nextColumn) {
@@ -127,11 +144,11 @@ public class LearningGridComponent extends Component {
         return nextRoom.toString();
     }
     
-    private String getDirectionDesc(Coordinates currentRoom, Coordinates nextRoom) {
-        int currentRow = currentRoom.getYCoordinate();
-        int currentColumn = currentRoom.getXCoordinate();
-        int nextRow = nextRoom.getYCoordinate();
-        int nextColumn = nextRoom.getXCoordinate();
+    private String getDirectionDesc(Location currentRoom, Location nextRoom) {
+        int currentRow = currentRoom.getRow();
+        int currentColumn = currentRoom.getCol();
+        int nextRow = nextRoom.getRow();
+        int nextColumn = nextRoom.getCol();
         if (currentRow == nextRow && currentColumn > nextColumn) {
             return "left";
         } else if (currentRow == nextRow && currentColumn < nextColumn) {

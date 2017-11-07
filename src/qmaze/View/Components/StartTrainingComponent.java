@@ -12,6 +12,8 @@ import javafx.scene.layout.Pane;
  */
 public class StartTrainingComponent extends Component {
 
+    private final Button btnTraining = new Button();
+    
     public StartTrainingComponent(ViewController controller) {
         super(controller);
     }
@@ -19,17 +21,21 @@ public class StartTrainingComponent extends Component {
     @Override
     public Pane build() {
         HBox hbox = new HBox();
-        Button btn = new Button();
-        btn.setText("Start training");
-        btn.setOnAction((ActionEvent event) -> {
+        btnTraining.setDisable(true);
+        btnTraining.setText("Start training");
+        btnTraining.setOnAction((ActionEvent event) -> {
             controller.startTraining();
         });
-        hbox.getChildren().add(btn);
+        hbox.getChildren().add(btnTraining);
         return hbox;
     }
 
     @Override
     public void reset() {
-        //DO NOTHING
+        if (controller.STATE.equals(AGENT_STATE)) {
+            btnTraining.setDisable(false);
+        } else if (controller.STATE.equals(RESET_STATE)){
+            btnTraining.setDisable(true);
+        }
     }
 }

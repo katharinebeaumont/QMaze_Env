@@ -1,14 +1,17 @@
 package qmaze.View;
 
+import qmaze.View.Maze.MazeConfig;
+import qmaze.View.Maze.MazeAgent;
+import qmaze.View.LearningGrid.MazeLearning;
 import java.util.ArrayList;
 import java.util.HashMap;
 import javafx.scene.layout.Pane;
 import qmaze.Controller.LearningController;
 import qmaze.Controller.TrainingInterruptedException;
-import qmaze.Environment.Coordinates;
+import qmaze.Environment.Location;
 import qmaze.View.Components.AlertPopup;
 import qmaze.View.Components.Component;
-import qmaze.View.MazeComponents.QMazeGrid;
+import qmaze.View.Maze.QMazeGrid;
 
 /**
  *
@@ -22,10 +25,10 @@ import qmaze.View.MazeComponents.QMazeGrid;
  */
 public class ViewController {
     
-    private final LearningController learningController;
+    private LearningController learningController;
     public String STATE;
 
-    private TrainingConfig config;
+    private MazeConfig config;
     private String heatMapColour = "None";
     
     private ArrayList<Component> components;
@@ -33,7 +36,6 @@ public class ViewController {
     
     public ViewController() {
         this.STATE = Component.RESET_STATE;
-        learningController = new LearningController();  
         components = new ArrayList();
     }
     
@@ -44,13 +46,13 @@ public class ViewController {
     /**
      * State Resets
      */
-    public void configReset(TrainingConfig config) {
+    public void configurationReset(MazeConfig config) {
         this.config = config;
         this.STATE = Component.ADJUST_PARAM_STATE;
         reset();
     }
     
-    public void episodesReset(TrainingConfig config) {
+    public void episodesReset(MazeConfig config) {
         this.config = config;
         this.STATE = Component.ADJUST_MAZE_STATE;
         reset();
@@ -77,6 +79,12 @@ public class ViewController {
         this.STATE = Component.ADJUST_MAZE_STATE;
         reset();
     }
+    
+    public void agentReset(MazeConfig config) {
+        this.config = config;
+        this.STATE = Component.AGENT_STATE;
+        reset();
+    }
 
     /**
      * Actions
@@ -86,35 +94,44 @@ public class ViewController {
         String previousState = this.STATE;
         try {
            this.STATE = Component.TRAINED_STATE;
-           learningController.startLearning(maze.getRooms(), maze.getRows(), maze.getColumns(), maze.getStartingState(), config);
+           learningController = new LearningController(maze.getRooms(), config);  
+           learningController.startLearning();
            reset();
         } catch (TrainingInterruptedException te) {
-            showAlert(te.getMessage());
+            showAlert(te.getMessage(), "There's no goal state I can get to. You're killing me!");
             this.STATE = previousState;
         }
     }
     
     public void showOptimalPath() {
         System.out.println("Finding optimal path...");
-        ArrayList<Coordinates> optimalPath = learningController.getOptimalPath(maze.getStartingState());
+        HashMap<MazeAgent, ArrayList<Location>> optimalPath = learningController.getOptimalPath();
         maze.animateMap(optimalPath);
     }
     
-    private void showAlert(String message) {
-        AlertPopup.popup(message);
+    public void showAlert(String header, String message) {
+        AlertPopup.popup(header, message);
+    }
+    
+    public String validateUrl(String url){
+        String name = LearningController.validateUrl(url);
+        if (name == null) {
+            showAlert("Could not talk to agent at " + url + "!", "Did you give me a phony url?");
+        } 
+        return name;
     }
     
     /**
      * Getters
      */
-    public Coordinates getGoalState() {
+    public Location getGoalState() {
         if (maze == null) {
             return null;
         }
         return maze.getGoalState();
     }
 
-    public HashMap<Coordinates, HashMap<Coordinates, Double>> getLearnings() {
+    public HashMap<MazeAgent, MazeLearning> getLearnings() {
         if (maze == null) {
             return new HashMap();
         }
@@ -130,11 +147,11 @@ public class ViewController {
         return heatMapColour;
     }
         
-    public HashMap<Coordinates, Integer> getHeatMap() {
+    public HashMap<Location, Integer> getHeatMap() {
          return learningController.getHeatMap();
     }
         
-    public TrainingConfig getQMazeConfig() {
+    public MazeConfig getQMazeConfig() {
         return config;
     }
 
